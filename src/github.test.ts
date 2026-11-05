@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { extractPrRefs } from './github.ts'
+import { extractPrRefs, toPullRequest, type PullRequestNode } from './github.ts'
 
 test('extractPrRefs reads Slack-formatted links and dedupes', () => {
   const text =
@@ -10,4 +10,17 @@ test('extractPrRefs reads Slack-formatted links and dedupes', () => {
     { owner: 'GitbookIO', repo: 'gitbook-x', number: 123 },
     { owner: 'GitbookIO', repo: 'gitbook', number: 45 },
   ])
+})
+
+test('toPullRequest ignores the author\'s own reviews', () => {
+  const node = (reviewers: (string | null)[]): PullRequestNode => ({
+    state: 'OPEN',
+    author: { login: 'alice' },
+    reviews: { nodes: reviewers.map((login) => ({ author: login ? { login } : null })) },
+    latestOpinionatedReviews: { nodes: [] },
+  })
+  assert.equal(toPullRequest(node(['alice', 'alice'])).reviews, 0)
+  assert.equal(toPullRequest(node(['alice', 'bob'])).reviews, 1)
+  // A deleted reviewer account still counts.
+  assert.equal(toPullRequest(node([null])).reviews, 1)
 })
