@@ -27,20 +27,33 @@ const QUERY = `
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
         state
-        reviews { totalCount }
+        author { login }
+        reviews(first: 100) { nodes { author { login } } }
         latestOpinionatedReviews(first: 100) { nodes { state } }
       }
     }
   }
 `
 
-type QueryResult = {
-  repository: {
-    pullRequest: {
-      state: PullRequest['state']
-      reviews: { totalCount: number }
-      latestOpinionatedReviews: { nodes: { state: string }[] }
-    }
+type Author = { login: string } | null
+
+export type PullRequestNode = {
+  state: PullRequest['state']
+  author: Author
+  reviews: { nodes: { author: Author }[] }
+  latestOpinionatedReviews: { nodes: { state: string }[] }
+}
+
+type QueryResult = { repository: { pullRequest: PullRequestNode } }
+
+export function toPullRequest(pr: PullRequestNode): PullRequest {
+  const count = (state: string) => pr.latestOpinionatedReviews.nodes.filter((r) => r.state === state).length
+  return {
+    state: pr.state,
+    // Replies by the author to review threads are recorded as reviews by the author.
+    reviews: pr.reviews.nodes.filter((r) => r.author?.login !== pr.author?.login).length,
+    approvals: count('APPROVED'),
+    changesRequested: count('CHANGES_REQUESTED'),
   }
 }
 
@@ -49,13 +62,6 @@ export function createPrFetcher(token: string) {
 
   return async (ref: PrRef): Promise<PullRequest> => {
     const { repository } = await client<QueryResult>(QUERY, { ...ref })
-    const pr = repository.pullRequest
-    const count = (state: string) => pr.latestOpinionatedReviews.nodes.filter((r) => r.state === state).length
-    return {
-      state: pr.state,
-      reviews: pr.reviews.totalCount,
-      approvals: count('APPROVED'),
-      changesRequested: count('CHANGES_REQUESTED'),
-    }
+    return toPullRequest(repository.pullRequest)
   }
 }
