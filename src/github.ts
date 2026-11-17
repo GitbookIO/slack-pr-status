@@ -1,4 +1,4 @@
-import { graphql } from '@octokit/graphql'
+import { GraphqlResponseError, graphql } from '@octokit/graphql'
 import type { PullRequest } from './status.ts'
 
 export type PrRef = { owner: string; repo: string; number: number }
@@ -34,6 +34,8 @@ const QUERY = `
   }
 `
 
+const UNREADABLE = new Set(['NOT_FOUND', 'FORBIDDEN'])
+
 type QueryResult = {
   repository: {
     pullRequest: {
@@ -47,9 +49,18 @@ type QueryResult = {
 export function createPrFetcher(token: string) {
   const client = graphql.defaults({ headers: { authorization: `token ${token}` } })
 
-  return async (ref: PrRef): Promise<PullRequest> => {
-    const { repository } = await client<QueryResult>(QUERY, { ...ref })
-    const pr = repository.pullRequest
+  /** Returns null when the token can't see the repository, e.g. a private repo from another workflow. */
+  return async (ref: PrRef): Promise<PullRequest | null> => {
+    let result: QueryResult
+    try {
+      result = await client<QueryResult>(QUERY, { ...ref })
+    } catch (error) {
+      if (error instanceof GraphqlResponseError && error.errors?.every((e) => UNREADABLE.has(e.type))) {
+        return null
+      }
+      throw error
+    }
+    const pr = result.repository.pullRequest
     const count = (state: string) => pr.latestOpinionatedReviews.nodes.filter((r) => r.state === state).length
     return {
       state: pr.state,
