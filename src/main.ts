@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { WebClient } from '@slack/web-api'
 import { parseConfig } from './config.ts'
-import { createPrFetcher, extractPrRefs, prKey, repoKey } from './github.ts'
+import { createPrFetcher, extractPrRefs, prKey } from './github.ts'
 import { findMessages, setReactions } from './slack.ts'
 import { aggregate, computeStatus } from './status.ts'
 
@@ -35,19 +35,19 @@ for (const channel of config.channels) {
   for (const message of messages) {
     const refs = extractPrRefs(message.text)
     const label = `${channel}/${message.ts} (${refs.map(prKey).join(', ')})`
-    // The workflow's GITHUB_TOKEN can only read PRs in its own repository.
-    if (refs.some((ref) => repoKey(ref) !== repoKey(trigger))) {
-      console.log(`${label}: skipped, links PRs from another repository`)
-      continue
-    }
     if (refs.length > 1 && config.multiPr === 'skip') {
       console.log(`${label}: skipped, links several PRs`)
       continue
     }
 
-    const statuses = await Promise.all(
-      refs.map(async (ref) => computeStatus(await fetchPr(ref), config.approvalsRequired)),
-    )
+    const prs = await Promise.all(refs.map(fetchPr))
+    const unreadable = refs.filter((_, i) => !prs[i])
+    if (unreadable.length > 0) {
+      console.log(`${label}: skipped, can't read ${unreadable.map(prKey).join(', ')}`)
+      continue
+    }
+
+    const statuses = prs.map((pr) => computeStatus(pr!, config.approvalsRequired))
     const status = aggregate(statuses)
     const emoji = config.emojis[status]
     console.log(`${label}: ${status} → ${emoji ? `:${emoji}:` : 'no emoji'}`)

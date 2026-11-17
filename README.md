@@ -3,7 +3,7 @@
 Adds emoji reactions to Slack posts that link GitHub pull requests, based on the PRs' review status.
 On each PR event it finds recent posts in the configured channels that link the PR. For each post it fetches the status of every PR the post links, works out one overall status, and sets the bot's reactions to match. Earlier status emojis are removed, so a post shows only its current status.
 
-Posts that link PRs from more than one repository are skipped, because the workflow's `GITHUB_TOKEN` can only read its own repository.
+A post can link PRs from several repositories. The workflow's `GITHUB_TOKEN` can read its own repository and public ones, so a post is skipped when it links a private repository other than the one the event came from. For a post that links a private and a public repository, events on the private repository's PR update it; events on the public repository's PR leave it as it is.
 
 ## Usage
 
@@ -45,7 +45,7 @@ jobs:
 | `channels` | required | Slack channel IDs to search |
 | `lookbackDays` | `14` | How far back to search for posts |
 | `approvalsRequired` | `1` | Approvals before a PR counts as `approved` |
-| `multiPr` | `aggregate` | For posts linking several PRs from the same repository: `aggregate` combines their statuses; `skip` leaves the post alone |
+| `multiPr` | `aggregate` | For posts linking several PRs: `aggregate` combines their statuses; `skip` leaves the post alone |
 | `emojis` | see below | Emoji per status. Set a status to `false` to turn it off |
 
 | Status | Default emoji | Meaning |
